@@ -1,0 +1,24 @@
+ebay_api:
+  token: "AUTH_TOKEN"
+  endpoint: "https://api.ebay.com/ws/api.dll"
+  site_id: "1"
+  compatibility_level: "1131"
+  credentials:
+    app_name: "YOUR_APP_NAME"
+    dev_name: "YOUR_DEV_NAME"
+    cert_name: "YOUR_CERT_NAME"
+
+settings:
+  mode: "file"
+  inventory_file: "inventory.csv"
+  query_file: "query.sql"
+  log_file: "ebay_sync.log"
+  batch_size: 1
+  log_level: "DEBUG"
+
+database:
+  driver: "{ODBC Driver 17 for SQL Server}"
+  server: "YOUR_SERVER_NAME"
+  database: "YOUR_DB_NAME"
+  username: "YOUR_USER"
+  password: "YOUR_PASSWORD"
