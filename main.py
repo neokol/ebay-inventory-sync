@@ -3,6 +3,7 @@ from datetime import datetime
 import requests
 import yaml
 import os
+from amazon_manager import AmazonInventoryManager
 from loguru import logger # type: ignore
 
 from ebay_manager import EbayManager
@@ -17,29 +18,35 @@ def load_config():
 
 def run_sync():
     config = load_config()
-    ebay_manager = EbayManager(config)
+    target = config['settings'].get('target_platform').lower()
+    if 'ebay' in target:
+        manager = EbayManager(config)
+    elif 'amazon' in target:
+        manager = AmazonInventoryManager(config)
+    else:
+        logger.error(f"Invalid target platform specified: {target}. Must be 'ebay', 'amazon'")
+        return
+    
     items = []
     errored_items = []
     successful_items = []
     
-    try:
-        
-        items = ebay_manager.fetch_data()
+    try:        
+        items = manager.fetch_data()
         logger.info(f"Starting inventory update process at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} from: {config['settings']['mode']}")
-        logger.info(f"Loaded {len(items)} items. Starting updates...")
-            
+        logger.info(f"Sync started for platform(s): {target.upper()}. {len(items)} items to process.")
         for item in items:
             batch = [item] 
             logger.info(f"Updating Item: {item['sku']}")
-                
-            success, sku = ebay_manager.update_inventory(batch, ebay_manager.session)
+            success, sku = manager.update_inventory(batch, manager.session)
+
             if success:
                 successful_items.append(sku)
             else:
                 errored_items.append(sku)
                     
     finally:
-        ebay_manager.close()
+        manager.close()
         logger.info("Process Complete. Summary:")
         logger.info(f"Total Successful: {len(successful_items)}")
         logger.info(f"Total Errored: {len(errored_items)}")
