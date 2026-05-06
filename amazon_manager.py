@@ -66,6 +66,68 @@ class AmazonInventoryManager:
                 }
             ]
         })
+    
+    def _build_price_payload(self, price, currency):
+        """Generates the JSON patch price payload for Amazon SP-API."""
+        return json.dumps({
+            "productType": "PRODUCT",
+            "patches": [
+                {
+                    "op": "replace",
+                    "path": "/attributes/purchasable_offer",
+                    "value": [
+                        {
+                            "currency": currency,
+                            "our_price": [
+                                {
+                                    "schedule": [
+                                        {
+                                            "value_with_tax": float(price)
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        })
+    
+    def _build_stock_price_payload(self, stock, price, currency):
+        """Generates a combined JSON patch for stock and price."""
+        return json.dumps({
+            "productType": "PRODUCT",
+            "patches": [
+                {
+                    "op": "replace",
+                    "path": "/attributes/fulfillment_availability",
+                    "value": [
+                        {
+                            "fulfillment_channel_code": "DEFAULT",
+                            "quantity": int(stock)
+                        }
+                    ]
+                },
+                {
+                    "op": "replace",
+                    "path": "/attributes/purchasable_offer",
+                    "value": [
+                        {
+                            "currency": currency,
+                            "our_price": [
+                                {
+                                    "schedule": [
+                                        {
+                                            "value_with_tax": float(price)
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        })
 
     def update_inventory(self, batch, session):
         """Sends the request to Amazon and returns status + SKU."""
@@ -76,27 +138,40 @@ class AmazonInventoryManager:
         item = batch[0]
         sku = str(item.get('sku', '')).strip()
         stock = item.get('stock', 0)
+        price = item.get('price', 0)
+        currency = item.get('currency', 'USD')
 
         if not sku:
             logger.error("Amazon requires a SKU. Skipping empty SKU.")
             return False, "N/A"
 
         url = f"{self.api_cfg['base_url']}/listings/2021-08-01/items/{self.api_cfg['seller_id']}/{sku}?marketplaceIds={self.api_cfg['marketplace_id']}"
-        payload = self._build_payload(stock)
+        update_type = self.config['settings'].get('update_type', 'stock').lower()
+        if update_type == 'stock':
+            payload = self._build_payload(stock)
+            log_msg = f"Stock: {stock}"
+        elif update_type == 'price':
+            payload = self._build_price_payload(price, currency)
+            log_msg = f"Price: {price} {currency}"
+        elif update_type == 'stock_price':
+            payload = self._build_stock_price_payload(stock, price, currency)
+            log_msg = f"Stock: {stock}, Price: {price} {currency}"
         headers = self._get_headers()
 
         try:
             response = session.patch(url, data=payload, headers=headers, timeout=30)
-            response.raise_for_status()
+            
             
             if response.status_code in [401, 403]:
                 logger.warning("Token expired during update. Refreshing...")
                 self._refresh_access_token()
                 response = session.patch(url, data=payload, headers=self._get_headers(), timeout=30)
             
+            response.raise_for_status()
+            
             # SP-API returns 200 OK or 202 Accepted for successful patches
             if response.status_code in [200, 202]:
-                logger.info(f"AMAZON SUCCESS: Updated SKU {sku} to {stock}")
+                logger.info(f"AMAZON SUCCESS: SKU {sku} | {log_msg}")
                 return True, sku
             else:
                 logger.error(f"AMAZON ERROR for SKU {sku}: {response.text}")
